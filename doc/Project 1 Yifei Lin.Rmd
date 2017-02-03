@@ -1,0 +1,345 @@
+---
+title: 'Project 1: Sentiment Analysis'
+output:
+  html_notebook: default
+  html_document: default
+    
+---
+
+#1.Introduction
+A Speech without emotion is like a body without soul. Presidential speeches, possibly the most viewed speeches, always deliver some important messages to not only American people but also the rest of world. Given their importance, presidents tended to use different emotions to achieve certain purposes, whether to demonstrate a certain personality or to gain trust from people. Thus, in this project, I am going to analyze all presidential speeches and find out how each persident uses emotion during their speeches.  
+
+#2.Data Mining
+In this section, I am going to extract President speeches from the internet and reconstruct them into tidy data which can be used directly for data analysis
+
+##2.1 Clearing Environment and Setting Work Directory
+
+##2.2 Installing Packages and Libraries
+Install the necessary packages and library them
+```{r, message=FALSE, warning=FALSE}
+packages.used=c("rvest","qdap","sentimentr", "gplots", "dplyr",
+                "tm")
+
+# check packages that need to be installed.
+packages.needed=setdiff(packages.used, 
+                        intersect(installed.packages()[,1], 
+                                  packages.used))
+# install additional packages
+if(length(packages.needed)>0){
+  install.packages(packages.needed, dependencies = TRUE)
+}
+
+# load packages
+library("rvest")#
+library("qdap")#
+library("sentimentr")#
+library("gplots")#
+library("dplyr")#
+
+
+source("../lib/plotstacked.R")
+source("../lib/speechFuncs.R")
+```
+
+
+##2.3 Loading Data
+Extract the Inauguaration, Nomination and Farewell Speeches url separately from the internet and other information from excels
+```{r, message=FALSE, warning=FALSE}
+### Inauguaral speeches
+main.page <- read_html(x = "http://www.presidency.ucsb.edu/inaugurals.php")
+inaug=f.speechlinks(main.page)
+inaug=inaug[-nrow(inaug),] # remove the last line, irrelevant due to error.
+
+#### Nomination speeches
+main.page=read_html("http://www.presidency.ucsb.edu/nomination.php")
+nomin <- f.speechlinks(main.page)
+
+#### Farewell speeches
+main.page=read_html("http://www.presidency.ucsb.edu/farewell_addresses.php")
+farewell <- f.speechlinks(main.page)
+
+inaug.list=read.csv("../data/inauglist.csv", stringsAsFactors = FALSE)
+nomin.list=read.csv("../data/nominlist.csv", stringsAsFactors = FALSE)
+farewell.list=read.csv("../data/farewelllist.csv", stringsAsFactors = FALSE)
+names(inaug.list)[1]<- paste("President")
+names(nomin.list)[1]<- paste("President")
+names(farewell.list)[1]<- paste("President")
+
+```
+
+##2.4 Data Manipulation
+Combine all speeches and create a sentence list from all speeches corresponding to correct labels
+```{r, message=FALSE, warning=FALSE}
+speech.list=rbind(inaug.list, nomin.list, farewell.list)
+speech.list$type=c(rep("inaug", nrow(inaug.list)),
+                   rep("nomin", nrow(nomin.list)),
+                   rep("farewell", nrow(farewell.list)))
+speech.url=rbind(inaug, nomin, farewell)
+speech.list=cbind(speech.list, speech.url)
+speech.list$fulltext=NA
+for(i in seq(nrow(speech.list))) {
+  text <- read_html(speech.list$urls[i]) %>% # load the page
+    html_nodes(".displaytext") %>% # isloate the text
+    html_text() # get the text
+  speech.list$fulltext[i]=text
+  # Create the file name
+  filename <- paste0("../data/fulltext/", 
+                     speech.list$type[i],
+                     speech.list$File[i], "-", 
+                     speech.list$Term[i], ".txt")
+  sink(file = filename) %>% # open file to write 
+  cat(text)  # write the file
+  sink() # close the file
+}
+speech1=paste(readLines("../data/fulltext/SpeechDonaldTrump-NA.txt", 
+                  n=-1, skipNul=TRUE),
+              collapse=" ")
+speech2=paste(readLines("../data/fulltext/SpeechDonaldTrump-NA2.txt", 
+                  n=-1, skipNul=TRUE),
+              collapse=" ")
+speech3=paste(readLines("../data/fulltext/PressDonaldTrump-NA.txt", 
+                  n=-1, skipNul=TRUE),
+              collapse=" ")
+
+Trump.speeches=data.frame(
+  President=rep("Donald J. Trump", 3),
+  File=rep("DonaldJTrump", 3),
+  Term=rep(0, 3),
+  Party=rep("Republican", 3),
+  Date=c("August 31, 2016", "September 7, 2016", "January 11, 2017"),
+  Words=c(word_count(speech1), word_count(speech2), word_count(speech3)),
+  Win=rep("yes", 3),
+  type=rep("speeches", 3),
+  links=rep(NA, 3),
+  urls=rep(NA, 3),
+  fulltext=c(speech1, speech2, speech3)
+)
+
+speech.list=rbind(speech.list, Trump.speeches)
+sentence.list=NULL
+for(i in 1:nrow(speech.list)){
+  sentences=sent_detect(speech.list$fulltext[i],
+                        endmarks = c("?", ".", "!", "|",";"))
+  if(length(sentences)>0){
+    emotions=get_nrc_sentiment(sentences)
+    word.count=word_count(sentences)
+    # colnames(emotions)=paste0("emo.", colnames(emotions))
+    # in case the word counts are zeros?
+    emotions=diag(1/(word.count+0.01))%*%as.matrix(emotions)
+    sentence.list=rbind(sentence.list, 
+                        cbind(speech.list[i,-ncol(speech.list)],
+                              sentences=as.character(sentences), 
+                              word.count,
+                              emotions,
+                              sent.id=1:length(sentences)
+                              )
+    )
+  }
+}
+
+sentence.list=
+  sentence.list%>%
+  filter(!is.na(word.count)) 
+```
+
+
+#3. Emotion Analysis Based on Party
+In this section, I am going to divide the data set based on their political parties and find out how emotions vary through different parties
+
+## 3.1 Dividing the Dataset 
+There are five different political parties:
+
+1. Fedralist: The first American political party. It existed from the early 1790s to 1816. Its remnants lasted into the 1820s. The Federalists called for a strong national government that promoted economic growth and fostered friendly relationships with Great Britain, as well as opposition to revolutionary France.
+
+2. Democratic: One of the two major contemporary political parties in the United States. Today, the House Democratic caucus is composed mostly of progressives and centrists, with a smaller minority of conservative Democrats. The party's philosophy of modern liberalism advocates social and economic equality, along with the welfare state. It seeks to provide government intervention and regulation in the economy.
+
+3. Republican: One of the two major contemporary political parties in the United States. The Republican Party's current ideology is American conservatism, which contrasts with the Democrats' modern liberalism. The Republican Party's platform involves support for free market capitalism, free enterprise, fiscal conservatism, a strong national defense, deregulation, and restrictions on labor unions. 
+
+4. Democratic-Republican: It believed that the Constitution was a "strict" document that clearly limited the powers of the federal government. Unlike the opposition Federalist Party, the Democratic-Republican Party contended that government did not have the right to adopt additional powers to fulfill its duties under the Constitution.
+
+5. Whig: It supported the supremacy of the US Congress over the Presidency and favored a program of modernization, banking and economic protectionism to stimulate manufacturing. It appealed to entrepreneurs, planters, reformers and the emerging urban middle class, but had little appeal to farmers or unskilled workers.
+```{r, message=FALSE, warning=FALSE}
+party <- unique(sentence.list$Party)
+Fedralist <- sentence.list[sentence.list$Party==party[2],]
+Fedralist <- Fedralist[!is.na(Fedralist$President),]
+Democratic_Republican_Party <- sentence.list[sentence.list$Party==party[3],]
+Democratic_Republican_Party <- Democratic_Republican_Party[!is.na(Democratic_Republican_Party$President),]
+Democratic <- sentence.list[sentence.list$Party==party[4],]
+Democratic <- Democratic[!is.na(Democratic$President),]
+Whig <- sentence.list[sentence.list$Party==party[5],]
+Whig <- Whig[!is.na(Whig$President),]
+Republican <- sentence.list[sentence.list$Party==party[6],]
+Republican <- Republican[!is.na(Republican$President),]
+```
+
+## 3.2 Barplot Comparison
+Plot barplot to rank emotions based on their appearences.
+```{r, fig.width=10, fig.height=12}
+par(mfrow = c(3, 2))
+emo.means=colMeans(select(Fedralist, anger:trust)>0.01)
+col.use=c("red2", "darkgoldenrod1", 
+            "chartreuse3", "blueviolet",
+            "darkgoldenrod2", "dodgerblue3", 
+            "darkgoldenrod1", "darkgoldenrod1")
+barplot(emo.means[order(emo.means)], las=2, col=col.use[order(emo.means)], horiz=T, main="Fedralist")
+
+emo.means=colMeans(select(Democratic, anger:trust)>0.01)
+col.use=c("red2", "darkgoldenrod1", 
+            "chartreuse3", "blueviolet",
+            "darkgoldenrod2", "dodgerblue3", 
+            "darkgoldenrod1", "darkgoldenrod1")
+barplot(emo.means[order(emo.means)], las=2, col=col.use[order(emo.means)], horiz=T, main="Democratic")
+
+emo.means=colMeans(select(Democratic_Republican_Party, anger:trust)>0.01)
+col.use=c("red2", "darkgoldenrod1", 
+            "chartreuse3", "blueviolet",
+            "darkgoldenrod2", "dodgerblue3", 
+            "darkgoldenrod1", "darkgoldenrod1")
+barplot(emo.means[order(emo.means)], las=2, col=col.use[order(emo.means)], horiz=T, main="Democratic_Republican_Party")
+
+emo.means=colMeans(select(Whig, anger:trust)>0.01)
+col.use=c("red2", "darkgoldenrod1", 
+            "chartreuse3", "blueviolet",
+            "darkgoldenrod2", "dodgerblue3", 
+            "darkgoldenrod1", "darkgoldenrod1")
+barplot(emo.means[order(emo.means)], las=2, col=col.use[order(emo.means)], horiz=T, main="Whig")
+
+emo.means=colMeans(select(Republican, anger:trust)>0.01)
+col.use=c("red2", "darkgoldenrod1", 
+            "chartreuse3", "blueviolet",
+            "darkgoldenrod2", "dodgerblue3", 
+            "darkgoldenrod1", "darkgoldenrod1")
+barplot(emo.means[order(emo.means)], las=2, col=col.use[order(emo.means)], horiz=T, main="Republican")
+```
+By comparing barplots, we can clearly see some similarities and differences.
+
+1.Emotions of Democratic, Republican and Democratic-Republican display the same ranking and similar frequncy. This is because Democratic-Republican party split into Democratic and Republican in 1800s. They shared the same methodology even though their believes are somewhat different. Thus, they share some similar patterns. Furthermore, their speeches tended to have a lot of positivity including trust, anticipation and joy which delivered strong faith to people
+
+2.Emotion of whig shows the most interesting trend. Fear ranks second in their speeches. This is because the party was in government during the time of technology innovation and the society changed rapidly. During that time, whig party nominees loved to first point out the possible "bad" directions the country would merge to and then demonstrate how they can prevent them as a strategy to appeal voters. Thus, a good portion of their speeches contained negativity.  
+
+## 3.3 Heat Map Comparison
+Plot heatmap of correlation values. Red indicates positive correlation and blue indicates negative correlation. 
+```{r, fig.width=5, fig.height=5}
+par(mfrow = c(3, 2))
+heatmap.2(cor(sentence.list%>%filter(Party=="Fedralist")%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Fedralist Speeches")
+heatmap.2(cor(sentence.list%>%filter(Party=="Democratic")%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Democratic Speeches")
+heatmap.2(cor(sentence.list%>%filter(Party==party[3])%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Democratic_Republican_Party Speeches")
+heatmap.2(cor(sentence.list%>%filter(Party=="Whig")%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Whig Speeches")
+heatmap.2(cor(sentence.list%>%filter(Party=="Republican")%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Republican Speeches")
+```
+By comparing heat maps, we can tell that emotions of five parties except democratic share the same pattern: positive and negative emotions are correlated with themselves but not with each other. This indicates that their speeches normally contained both emotions. However, in Democratic speeches, positive and negative emotions are negatively correlated with each other which means that their speeches were either positive or negative. This pattern reflects that part of Democrats are extremists. 
+
+
+
+
+#4. Emotion Analysis Based on Term
+In this section, I am going to filter the Presidents who had two terms and divide their speeches into first-term and second-term speeches. Then, I will find out how emotion vary from their first term to second term.
+
+## 4.1 Dividing the Dataset 
+Scrap the speeches of Presidents who had two terms
+```{r, message=FALSE, warning=FALSE}
+termtwo <-speech.list[which(speech.list$Term==2)-1,]
+unique.list=NULL
+for(i in 1:nrow(termtwo)){
+  sen=sent_detect(termtwo$fulltext[i],
+                        endmarks = c("?", ".", "!", "|",";"))
+  if(length(sen)>0){
+    emotions=get_nrc_sentiment(sen)
+    word.count=word_count(sen)
+    # colnames(emotions)=paste0("emo.", colnames(emotions))
+    # in case the word counts are zeros?
+    emotions=diag(1/(word.count+0.01))%*%as.matrix(emotions)
+    unique.list=rbind(unique.list, 
+                        cbind(termtwo[i,-ncol(termtwo)],
+                              sen=as.character(sen), 
+                              word.count,
+                              emotions,
+                              sent.id=1:length(sen)
+                        )
+    )
+  }
+}
+
+unique.list=
+  unique.list%>%
+  filter(!is.na(word.count)) 
+```
+
+Scrap their second-term speeches
+```{r, message=FALSE, warning=FALSE}
+Second_term <- sentence.list[sentence.list$Term==2,]
+Second_term <- Second_term[!is.na(Second_term$President),]
+```
+
+## 4.2 Barplot Comparison
+Barplots did not display any differences, so I ignored this comparison  
+
+## 4.3 Heat Map Comparison
+```{r, fig.width=5, fig.height=5}
+heatmap.2(cor(unique.list%>%filter(Term==1)%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "First Term Speeches")
+heatmap.2(cor(sentence.list%>%filter(Term==2)%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Second Term Speeches")
+```
+By comparing heat map, we can see that first-term speeches appears to be more extreme than the second-term speeches. Intuitively, POTUS was less experienced in their first term which made them less sophisticated in terms of making speeches. 
+
+
+
+
+
+#5. Emotion Analysis Based on Win or Not
+In this section, I am going to divide the nomination speeches into win and loss speeches based on the nomination results. Then, I will find out the emotion difference between them.
+
+## 5.1 Dividing the Dataset 
+Divide the nomination speeches into win and loss speeches
+```{r, message=FALSE, warning=FALSE}
+win_speech <- Nomination[Nomination$Win=="Yes",]
+win_speech <- win_speech[!is.na(win_speech$President),]
+lose_speech <- Nomination[Nomination$Win=="No",]
+lose_speech <- lose_speech[!is.na(lose_speech$President),]
+```
+
+## 5.2 Barplot Comparison
+Barplots did not display any differences, so I ignored this comparison  
+
+## 5.3 Heat Map Comparison
+```{r, fig.width=5, fig.height=5}
+
+heatmap.2(cor(sentence.list%>%filter(Win=="Yes")%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Win Speeches")
+
+heatmap.2(cor(sentence.list%>%filter(Win=="No")%>%select(anger:trust)), 
+          scale = "none", 
+          col = bluered(100), , margin=c(6, 6), key=F,
+          trace = "none", density.info = "none", main = "Loss Speeches")
+```
+By comparing the heat maps, we can see that loss speeches appears to be more extreme than win speeches. Based on the nomination result, we can assume that loss speeches delivered a less sophisticated impression to voters which made them favor other candidates. 
+
+# 6 Discussion
+In this project, I only include the meaningful results. I also divided the data set based on type, length and date of all presidential speeches and performed the same sentimental analysis. However, nothing interesting came out. 
+
+In addition, the intuitive explanation of all patterns that I found are limited. There are definitely other historical reasons that influence the pattern.  
+
+
+
