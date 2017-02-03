@@ -8,10 +8,10 @@ This is the first and only *individual* (as opposed to *team*) this semester.
 
 Term: Spring 2017
 
-+ Projec title: Lorem ipsum dolor sit amet
-+ This project is conducted by [your name]
++ Projec title: Sentiment Analysis
++ This project is conducted by Yifei Lin
 
-+ Project summary: [a short summary] Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
++ Project summary: In this project, I perform sentiment analysis on presidential speeches in order to find out how emotions vary based on different political parties, different terms and whether they won or not. My results show that Emotions varied dramatically through different parties due to their distinct believes and some historical reasons. Also, for presidents who had two terms, their second-term speeches appeared to be more sophisiticated than first-term speeches in that they were more experienced. Furthermore, loss speeches were more extreme than win speeches which, intuitively, made them lose the nomination battle. 
 
 Following [suggestions](http://nicercode.github.io/blog/2013-04-05-projects/) by [RICH FITZJOHN](http://nicercode.github.io/about/#Team) (@richfitz). This folder is orgarnized as follows.
 
